@@ -115,11 +115,12 @@ class GardenTimerCard extends HTMLElement {
     this._weekEnd = end;
 
     const settled = await Promise.allSettled(
-      this._entityIds.map(id =>
-        this._hass
-          .callWS({ type: 'calendar/events', entity_id: id, start: start.toISOString(), end: end.toISOString() })
-          .then(r => ({ id, evts: r || [] }))
-      )
+      this._entityIds.map(id => {
+        const path = `calendars/${id}?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`;
+        return this._hass
+          .callApi('GET', path)
+          .then(r => ({ id, evts: Array.isArray(r) ? r : [] }));
+      })
     );
     this._events = {};
     this._wsErrors = [];
