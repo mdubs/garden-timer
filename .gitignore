@@ -8,6 +8,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
+.build/
 build/
 develop-eggs/
 dist/
@@ -202,6 +203,7 @@ cython_debug/
 # .vscode/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
+.vscode
 
 # Ruff stuff:
 .ruff_cache/

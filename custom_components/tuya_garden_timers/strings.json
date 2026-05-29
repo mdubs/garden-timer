@@ -1,0 +1,29 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Tuya Cloud",
+        "description": "Enter your Tuya IoT Platform credentials. Create an account at iot.tuya.com and link your Smart Life devices.",
+        "data": {
+          "api_region": "API Region",
+          "access_id": "Access ID",
+          "access_secret": "Access Secret",
+          "scan_interval": "Update interval (seconds)"
+        },
+        "data_description": {
+          "api_region": "The data centre region for your account (eu, us, in, cn)",
+          "access_id": "Client ID / Access ID from iot.tuya.com",
+          "access_secret": "Client Secret / Access Secret from iot.tuya.com",
+          "scan_interval": "How often to poll the Tuya cloud (60–3600 seconds)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect — check your region and credentials.",
+      "unknown": "Unexpected error. Check the Home Assistant logs."
+    },
+    "abort": {
+      "already_configured": "This Tuya account is already configured."
+    }
+  }
+}
