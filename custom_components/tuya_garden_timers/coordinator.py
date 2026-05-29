@@ -32,8 +32,10 @@ from .const import (
     CONF_ACCESS_ID,
     CONF_ACCESS_SECRET,
     CONF_CLOUD_FAST_INTERVAL,
+    CONF_GW_IP_PREFIX,
     CONF_LOCAL_SCAN_INTERVAL,
     CONF_REGION,
+    CONF_SWAP_GGQ_ZONES,
     CONF_TOPOLOGY,
     DEFAULT_CLOUD_FAST_INTERVAL,
     DEFAULT_LOCAL_SCAN_INTERVAL,
@@ -299,6 +301,13 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
         # {gateway_id: {id, ip, key, sub_devices: [{id, node_id, category, name}]}}
         self._topology: dict[str, dict] = dict(config.get(CONF_TOPOLOGY) or {})
 
+        # Apply manual IP overrides from options (gw_ip_<gateway_id> keys)
+        for gw_id in self._topology:
+            manual_ip = config.get(f"{CONF_GW_IP_PREFIX}{gw_id}", "").strip()
+            if manual_ip:
+                self._topology[gw_id]["ip"] = manual_ip
+                _LOGGER.debug("[init] Using manual IP %s for gateway %s", manual_ip, gw_id[:12])
+
         # Cached tier data (survive across update cycles)
         self._local_dps: dict[str, dict[int, Any]] = {}     # device_id → {dp_num: val}
         self._local_dps_ts: dict[str, datetime] = {}        # device_id → last successful read time
@@ -528,6 +537,16 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
         fast_props: dict,
     ) -> list[dict]:
         zone_defs = ZONE_DEFS_BY_CATEGORY.get(category, [])
+
+        # If the user has enabled zone swap (valve DPs appear reversed), swap
+        # switch_dp and state_dp between zone 1 and zone 2 without disturbing
+        # the use_time / schedule / rain-delay mappings that were already correct.
+        if category == "ggq" and self._config.get(CONF_SWAP_GGQ_ZONES) and len(zone_defs) == 2:
+            z0, z1 = zone_defs[0], zone_defs[1]
+            zone_defs = [
+                {**z0, "switch_dp": z1["switch_dp"], "switch_code": z1["switch_code"], "state_dp": z1["state_dp"]},
+                {**z1, "switch_dp": z0["switch_dp"], "switch_code": z0["switch_code"], "state_dp": z0["state_dp"]},
+            ]
         zone_names = slow.get("zone_names", {})
         schedule_b64 = slow.get("schedule_b64")
         entries = _decode_timer_payload(schedule_b64, category) if schedule_b64 else []

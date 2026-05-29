@@ -29,14 +29,18 @@
   "options": {
     "step": {
       "init": {
-        "title": "Polling intervals",
+        "title": "Tuya Garden Timers — Options",
+        "description": "Current gateway IPs: {gateway_ids}",
         "data": {
           "local_scan_interval": "Local LAN poll interval (seconds)",
-          "cloud_fast_interval": "Cloud fast poll interval (seconds)"
+          "cloud_fast_interval": "Cloud fast poll interval (seconds)",
+          "swap_ggq_zones": "Swap zone 1 & 2 valve outputs on dual-zone timers"
         },
         "data_description": {
-          "local_scan_interval": "How often to poll gateways directly over LAN (10–300 s)",
-          "cloud_fast_interval": "How often to fetch schedule/timestamp data from the cloud (60–3600 s)"
+          "local_scan_interval": "How often to poll gateways over LAN (10–300 s)",
+          "cloud_fast_interval": "How often to fetch schedule/timestamp data from the cloud (60–3600 s)",
+          "swap_ggq_zones": "Enable if valve open/close shows on the wrong zone (e.g. Zone 2 shows active when Zone 1 is physically running)",
+          "gw_ip_": "Enter the LAN IP address for this gateway to override auto-discovery (leave blank to use auto-scan)"
         }
       }
     }

@@ -14,6 +14,9 @@ CONF_LOCAL_SCAN_INTERVAL = "local_scan_interval"
 CONF_CLOUD_FAST_INTERVAL = "cloud_fast_interval"
 # Stored internally in config entry after first cloud fetch
 CONF_TOPOLOGY = "topology"
+# Options-only settings
+CONF_SWAP_GGQ_ZONES = "swap_ggq_zones"   # bool: swap zone 1/2 valve DPs for dual-zone timers
+CONF_GW_IP_PREFIX   = "gw_ip_"           # + gateway_id → manual IP override
 
 REGIONS = ["eu", "us", "in", "cn"]
 

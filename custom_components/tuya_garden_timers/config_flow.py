@@ -12,8 +12,10 @@ from .const import (
     CONF_ACCESS_ID,
     CONF_ACCESS_SECRET,
     CONF_CLOUD_FAST_INTERVAL,
+    CONF_GW_IP_PREFIX,
     CONF_LOCAL_SCAN_INTERVAL,
     CONF_REGION,
+    CONF_SWAP_GGQ_ZONES,
     CONF_TOPOLOGY,
     DEFAULT_CLOUD_FAST_INTERVAL,
     DEFAULT_LOCAL_SCAN_INTERVAL,
@@ -106,7 +108,7 @@ class TuyaGardenTimersConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class TuyaGardenTimersOptionsFlow(config_entries.OptionsFlow):
-    """Handle options (polling intervals) for an existing config entry."""
+    """Handle options (polling intervals, gateway IPs, zone swap) for an existing entry."""
 
     def __init__(self, config_entry) -> None:
         self._entry = config_entry
@@ -117,24 +119,44 @@ class TuyaGardenTimersOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        current_local = self._entry.options.get(
-            CONF_LOCAL_SCAN_INTERVAL,
-            self._entry.data.get(CONF_LOCAL_SCAN_INTERVAL, DEFAULT_LOCAL_SCAN_INTERVAL),
-        )
-        current_fast = self._entry.options.get(
-            CONF_CLOUD_FAST_INTERVAL,
-            self._entry.data.get(CONF_CLOUD_FAST_INTERVAL, DEFAULT_CLOUD_FAST_INTERVAL),
-        )
+        opts = self._entry.options
+        data = self._entry.data
+        topology = data.get(CONF_TOPOLOGY, {})
 
-        schema = vol.Schema(
-            {
-                vol.Optional(CONF_LOCAL_SCAN_INTERVAL, default=current_local): vol.All(
-                    int, vol.Range(min=10, max=300)
-                ),
-                vol.Optional(CONF_CLOUD_FAST_INTERVAL, default=current_fast): vol.All(
-                    int, vol.Range(min=60, max=3600)
-                ),
-            }
+        current_local = opts.get(
+            CONF_LOCAL_SCAN_INTERVAL,
+            data.get(CONF_LOCAL_SCAN_INTERVAL, DEFAULT_LOCAL_SCAN_INTERVAL),
         )
-        return self.async_show_form(step_id="init", data_schema=schema)
+        current_fast = opts.get(
+            CONF_CLOUD_FAST_INTERVAL,
+            data.get(CONF_CLOUD_FAST_INTERVAL, DEFAULT_CLOUD_FAST_INTERVAL),
+        )
+        current_swap = opts.get(CONF_SWAP_GGQ_ZONES, False)
+
+        schema_dict: dict = {
+            vol.Optional(CONF_LOCAL_SCAN_INTERVAL, default=current_local): vol.All(
+                int, vol.Range(min=10, max=300)
+            ),
+            vol.Optional(CONF_CLOUD_FAST_INTERVAL, default=current_fast): vol.All(
+                int, vol.Range(min=60, max=3600)
+            ),
+            vol.Optional(CONF_SWAP_GGQ_ZONES, default=current_swap): bool,
+        }
+
+        # One optional IP field per gateway, pre-populated from topology or saved options
+        for gw_id, gw in topology.items():
+            key = f"{CONF_GW_IP_PREFIX}{gw_id}"
+            current_ip = opts.get(key) or gw.get("ip") or ""
+            schema_dict[vol.Optional(key, default=current_ip)] = str
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(schema_dict),
+            description_placeholders={
+                "gateway_ids": ", ".join(
+                    f"{gw_id[:8]}… = {gw.get('ip') or 'unknown'}"
+                    for gw_id, gw in topology.items()
+                )
+            },
+        )
 
