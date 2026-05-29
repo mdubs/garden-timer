@@ -70,4 +70,7 @@ class ValveSwitch(TuyaGardenZoneEntity, SwitchEntity):
             value,
             code,
         )
+        # Optimistically reflect the new state immediately so the UI
+        # doesn't revert to the old value while waiting for the next poll.
+        self.coordinator.optimistic_update_dp(self._device_id, dp, value)
         await self.coordinator.async_request_refresh()

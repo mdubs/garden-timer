@@ -79,4 +79,5 @@ class RainDelaySelect(TuyaGardenZoneEntity, SelectEntity):
             dps_val,
             code,
         )
+        self.coordinator.optimistic_update_dp(self._device_id, dp, dps_val)
         await self.coordinator.async_request_refresh()

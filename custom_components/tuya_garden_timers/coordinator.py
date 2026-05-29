@@ -612,6 +612,16 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
         # Cloud fallback
         return self._cloud_write(device_id, [{"code": code, "value": value}])
 
+    def optimistic_update_dp(self, device_id: str, dp: int, value: Any) -> None:
+        """Immediately inject a known-good value into the local DP cache.
+
+        Called right after a successful write so the entity reflects the new
+        state instantly, without waiting for the next LAN poll to confirm it.
+        """
+        if device_id not in self._local_dps:
+            self._local_dps[device_id] = {}
+        self._local_dps[device_id][dp] = value
+
     # ------------------------------------------------------------------
     # Force cloud fast refresh (called by button entity)
     # ------------------------------------------------------------------
