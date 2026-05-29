@@ -1,6 +1,8 @@
 """Tuya Garden Timers — HA custom integration."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -10,8 +12,16 @@ from .coordinator import TuyaGardenCoordinator
 
 PLATFORMS = [Platform.SENSOR, Platform.SWITCH, Platform.SELECT, Platform.BUTTON, Platform.CALENDAR]
 
+_CARD_URL  = f"/{DOMAIN}/garden-timer-card.js"
+_CARD_PATH = Path(__file__).parent / "www" / "garden-timer-card.js"
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # Register the custom Lovelace card JS (once per HA instance)
+    if not hass.data.get(f"{DOMAIN}_card_registered"):
+        hass.http.register_static_path(_CARD_URL, str(_CARD_PATH), cache_headers=False)
+        hass.data[f"{DOMAIN}_card_registered"] = True
+
     # Merge options (polling intervals) over base config data
     config = dict(entry.data)
     config.update(entry.options)
