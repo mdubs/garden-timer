@@ -25,5 +25,20 @@
     "abort": {
       "already_configured": "This Tuya account is already configured."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Polling intervals",
+        "data": {
+          "local_scan_interval": "Local LAN poll interval (seconds)",
+          "cloud_fast_interval": "Cloud fast poll interval (seconds)"
+        },
+        "data_description": {
+          "local_scan_interval": "How often to poll gateways directly over LAN (10–300 s)",
+          "cloud_fast_interval": "How often to fetch schedule/timestamp data from the cloud (60–3600 s)"
+        }
+      }
+    }
   }
 }

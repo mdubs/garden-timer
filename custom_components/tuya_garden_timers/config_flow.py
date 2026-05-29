@@ -100,3 +100,41 @@ class TuyaGardenTimersConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    @staticmethod
+    def async_get_options_flow(config_entry):
+        return TuyaGardenTimersOptionsFlow(config_entry)
+
+
+class TuyaGardenTimersOptionsFlow(config_entries.OptionsFlow):
+    """Handle options (polling intervals) for an existing config entry."""
+
+    def __init__(self, config_entry) -> None:
+        self._entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict | None = None
+    ) -> config_entries.FlowResult:
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        current_local = self._entry.options.get(
+            CONF_LOCAL_SCAN_INTERVAL,
+            self._entry.data.get(CONF_LOCAL_SCAN_INTERVAL, DEFAULT_LOCAL_SCAN_INTERVAL),
+        )
+        current_fast = self._entry.options.get(
+            CONF_CLOUD_FAST_INTERVAL,
+            self._entry.data.get(CONF_CLOUD_FAST_INTERVAL, DEFAULT_CLOUD_FAST_INTERVAL),
+        )
+
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_LOCAL_SCAN_INTERVAL, default=current_local): vol.All(
+                    int, vol.Range(min=10, max=300)
+                ),
+                vol.Optional(CONF_CLOUD_FAST_INTERVAL, default=current_fast): vol.All(
+                    int, vol.Range(min=60, max=3600)
+                ),
+            }
+        )
+        return self.async_show_form(step_id="init", data_schema=schema)
+
