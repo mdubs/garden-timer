@@ -355,8 +355,11 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
         results: dict[str, dict] = {}
         ip = gw.get("ip")
         if not ip:
+            _LOGGER.debug("[local] Gateway %s has no IP — skipping", gw.get("id"))
             return results
 
+        _LOGGER.debug("[local] Polling gateway %s @ %s (%d sub-devices)",
+                      gw.get("id"), ip, len(gw.get("sub_devices", [])))
         gw_dev = tinytuya.Device(gw["id"], ip, gw["key"], version=3.4)
 
         for sub in gw.get("sub_devices", []):
@@ -367,31 +370,44 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
                 )
                 status = sub_dev.status()
                 if status and "dps" in status:
-                    # Convert string keys to ints for consistent access
-                    results[sub["id"]] = {int(k): v for k, v in status["dps"].items()}
+                    dps = {int(k): v for k, v in status["dps"].items()}
+                    results[sub["id"]] = dps
+                    _LOGGER.debug("[local] %s (%s) → %s", sub.get("name", sub["id"]), sub["id"], dps)
                 elif status and status.get("Error"):
-                    _LOGGER.debug("Local read error %s: %s", sub["id"], status["Error"])
+                    _LOGGER.debug("[local] %s (%s) error: %s", sub.get("name", sub["id"]), sub["id"], status["Error"])
+                else:
+                    _LOGGER.debug("[local] %s (%s) — empty/no-dps response: %s", sub.get("name", sub["id"]), sub["id"], status)
             except Exception as err:
-                _LOGGER.debug("Local read failed %s: %s", sub["id"], err)
+                _LOGGER.debug("[local] %s (%s) exception: %s", sub.get("name", sub["id"]), sub["id"], err)
 
         return results
 
     def _read_all_local(self) -> dict[str, dict]:
+        _LOGGER.debug("[local] Starting local poll cycle (%d gateways)", len(self._topology))
         all_dps: dict[str, dict] = {}
         for gw_id, gw in self._topology.items():
             try:
                 gw_dps = self._read_local_gateway(gw)
                 all_dps.update(gw_dps)
             except Exception as err:
-                _LOGGER.debug("Gateway %s local read failed: %s", gw_id, err)
+                _LOGGER.debug("[local] Gateway %s poll failed: %s", gw_id, err)
+        _LOGGER.debug("[local] Poll cycle complete — %d/%d devices responded",
+                      len(all_dps),
+                      sum(len(g.get("sub_devices", [])) for g in self._topology.values()))
         return all_dps
 
     def _is_local_fresh(self, device_id: str) -> bool:
         """Return True if the cached local DPs for this device are recent enough."""
         ts = self._local_dps_ts.get(device_id)
         if ts is None:
+            _LOGGER.debug("[merge] %s — no local timestamp, using cloud data", device_id)
             return False
-        return (datetime.now() - ts).total_seconds() < self._local_stale_secs
+        age = (datetime.now() - ts).total_seconds()
+        fresh = age < self._local_stale_secs
+        if not fresh:
+            _LOGGER.debug("[merge] %s — local data stale (%.0fs old, limit %ds), using cloud data",
+                          device_id, age, self._local_stale_secs)
+        return fresh
 
     # ------------------------------------------------------------------
     # Tier 2 — Cloud fast (last-watered timestamps + schedule)
@@ -670,6 +686,7 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
         # --- Tier 1: Local LAN ---
         if self._topology:
             try:
+                _LOGGER.debug("[update] Starting local LAN poll at %s", now.strftime("%H:%M:%S"))
                 local = await self.hass.async_add_executor_job(self._read_all_local)
                 if local:
                     self._local_dps.update(local)
@@ -677,10 +694,13 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
                     for device_id in local:
                         self._local_dps_ts[device_id] = now
                     self._local_ok = True
-                elif self._local_ok:
-                    _LOGGER.debug("Local reads returned no data this cycle")
+                    _LOGGER.debug("[update] Local poll OK — %d devices updated", len(local))
+                else:
+                    _LOGGER.debug("[update] Local poll returned no devices this cycle")
             except Exception as err:
-                _LOGGER.debug("Local reads error: %s", err)
+                _LOGGER.debug("[update] Local poll exception: %s", err)
+        else:
+            _LOGGER.debug("[update] No topology — skipping local poll")
 
         # --- Tier 3: Cloud slow (daily or first run) ---
         need_slow = (
