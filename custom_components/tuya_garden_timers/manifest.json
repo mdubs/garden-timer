@@ -1,11 +1,12 @@
 {
   "domain": "tuya_garden_timers",
   "name": "Tuya Garden Timers",
-  "codeowners": [],
+  "codeowners": ["@mdubs"],
   "config_flow": true,
-  "documentation": "",
+  "documentation": "https://github.com/mdubs/garden-timer",
+  "issue_tracker": "https://github.com/mdubs/garden-timer/issues",
   "integration_type": "hub",
-  "iot_class": "cloud_polling",
+  "iot_class": "local_polling",
   "requirements": ["tinytuya>=1.13.1"],
   "version": "1.0.0"
 }
