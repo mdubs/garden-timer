@@ -1,8 +1,6 @@
 /**
  * garden-timer-card.js  v4
- */
-
-const CARD_VERSION = 'v4';
+ *
  *
  * Renders a week-grid view:
  *   - 7 day columns (Mon–Sun), navigable with < / >
@@ -21,6 +19,7 @@ const CARD_VERSION = 'v4';
  *   end_hour: 22           # end of visible time range (default 22)
  *   title: "Garden"        # card title (default "Watering Schedule")
  */
+const CARD_VERSION = 'v4';
 
 const PALETTE = [
   '#1E88E5', // blue
