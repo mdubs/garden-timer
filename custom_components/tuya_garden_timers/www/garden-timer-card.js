@@ -1,6 +1,8 @@
 /**
- * garden-timer-card.js
- * Custom Lovelace card for the Tuya Garden Timers integration.
+ * garden-timer-card.js  v4
+ */
+
+const CARD_VERSION = 'v4';
  *
  * Renders a week-grid view:
  *   - 7 day columns (Mon–Sun), navigable with < / >
@@ -308,7 +310,7 @@ class GardenTimerCard extends HTMLElement {
         <div class="wrap">
           <div class="toolbar">
             <button class="nav" id="prev">&#8249;</button>
-            <span class="title">🌿 ${this._config.title} &nbsp;·&nbsp; ${weekLabel}</span>
+            <span class="title">🌿 ${this._config.title} &nbsp;·&nbsp; ${weekLabel} <span style="font-size:10px;opacity:.4">${CARD_VERSION}</span></span>
             <button class="nav" id="next">&#8250;</button>
           </div>
           ${this._wsErrors && this._wsErrors.length ? `<div style="color:red;font-size:11px;margin-bottom:6px">⚠ WS error: ${this._wsErrors[0]}</div>` : ''}

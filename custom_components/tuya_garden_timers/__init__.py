@@ -13,7 +13,7 @@ from .coordinator import TuyaGardenCoordinator
 
 PLATFORMS = [Platform.SENSOR, Platform.SWITCH, Platform.SELECT, Platform.BUTTON, Platform.CALENDAR]
 
-_CARD_URL  = f"/{DOMAIN}/garden-timer-card.js"
+_CARD_URL  = f"/{DOMAIN}/garden-timer-card-v4.js"
 _CARD_PATH = Path(__file__).parent / "www" / "garden-timer-card.js"
 
 
