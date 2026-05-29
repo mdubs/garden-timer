@@ -300,11 +300,15 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
 
         # Cached tier data (survive across update cycles)
         self._local_dps: dict[str, dict[int, Any]] = {}     # device_id → {dp_num: val}
+        self._local_dps_ts: dict[str, datetime] = {}        # device_id → last successful read time
         self._cloud_fast: dict[str, dict] = {}              # device_id → shadow props
         self._cloud_slow: dict[str, dict] = {}              # device_id → slow data
 
         self._last_cloud_fast: datetime | None = None
         self._last_cloud_slow: datetime | None = None
+
+        # Local data older than this many seconds is treated as stale in _merge
+        self._local_stale_secs: int = self._local_scan_interval * 3
 
         # Whether local reads are working (avoids log spam)
         self._local_ok: bool = bool(self._topology)
@@ -381,6 +385,13 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
             except Exception as err:
                 _LOGGER.debug("Gateway %s local read failed: %s", gw_id, err)
         return all_dps
+
+    def _is_local_fresh(self, device_id: str) -> bool:
+        """Return True if the cached local DPs for this device are recent enough."""
+        ts = self._local_dps_ts.get(device_id)
+        if ts is None:
+            return False
+        return (datetime.now() - ts).total_seconds() < self._local_stale_secs
 
     # ------------------------------------------------------------------
     # Tier 2 — Cloud fast (last-watered timestamps + schedule)
@@ -463,7 +474,9 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
 
         for device_id, slow in self._cloud_slow.items():
             category = slow.get("category", "ggq")
-            local_dps = self._local_dps.get(device_id, {})
+            # Only use local DP cache if data is fresh; otherwise fall through
+            # to cloud shadow so external changes (app, scheduled runs) show up.
+            local_dps = self._local_dps.get(device_id, {}) if self._is_local_fresh(device_id) else {}
             fast_props = self._cloud_fast.get(device_id, {})
 
             battery_dp = BATTERY_DP.get(category)
@@ -621,6 +634,8 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
         if device_id not in self._local_dps:
             self._local_dps[device_id] = {}
         self._local_dps[device_id][dp] = value
+        # Keep the freshness timestamp current so _merge uses this value
+        self._local_dps_ts[device_id] = datetime.now()
 
     # ------------------------------------------------------------------
     # Force cloud fast refresh (called by button entity)
@@ -658,6 +673,9 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
                 local = await self.hass.async_add_executor_job(self._read_all_local)
                 if local:
                     self._local_dps.update(local)
+                    # Stamp freshness timestamp for every device that responded
+                    for device_id in local:
+                        self._local_dps_ts[device_id] = now
                     self._local_ok = True
                 elif self._local_ok:
                     _LOGGER.debug("Local reads returned no data this cycle")
