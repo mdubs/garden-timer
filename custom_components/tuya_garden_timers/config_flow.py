@@ -20,7 +20,7 @@ from .const import (
     DOMAIN,
     REGIONS,
 )
-from .coordinator import TuyaGardenCoordinator
+from .coordinator import TuyaGardenCoordinator, apply_scan_ips, build_topology_from_devices
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,8 +49,8 @@ def _test_and_discover(region: str, access_id: str, access_secret: str) -> dict:
     if not isinstance(devices, list) or not devices:
         return {"ok": False, "topology": {}, "error": "cannot_connect"}
 
-    topology = TuyaGardenCoordinator._build_topology_from_devices(devices)
-    topology = TuyaGardenCoordinator._apply_scan_ips(topology)
+    topology = build_topology_from_devices(devices)
+    topology = apply_scan_ips(topology)
 
     found_ips = sum(1 for g in topology.values() if g.get("ip"))
     _LOGGER.debug(

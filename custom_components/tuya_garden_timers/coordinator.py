@@ -49,6 +49,66 @@ _TUYA_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
 
 # ---------------------------------------------------------------------------
+# Topology helpers (module-level so config_flow can import them directly)
+# ---------------------------------------------------------------------------
+
+def build_topology_from_devices(devices: list) -> dict:
+    """Map gateway IDs → sub-device lists (no IPs yet)."""
+    gateways: dict[str, dict] = {}
+    subs_by_gw: dict[str, list] = {}
+
+    for dev in devices:
+        gw_id = dev.get("gateway_id", "")
+        cat = dev.get("category", "")
+        dev_id = dev.get("id", "")
+        if not dev_id:
+            continue
+        if not gw_id and cat in GATEWAY_CATEGORIES:
+            gateways[dev_id] = {
+                "id": dev_id,
+                "key": dev.get("key", ""),
+                "ip": None,
+                "sub_devices": [],
+            }
+        elif gw_id and cat in WATERING_CATEGORIES:
+            subs_by_gw.setdefault(gw_id, []).append({
+                "id": dev_id,
+                "node_id": dev.get("node_id", ""),
+                "category": cat,
+                "name": dev.get("name", dev_id),
+            })
+
+    for gw_id, subs in subs_by_gw.items():
+        if gw_id in gateways:
+            gateways[gw_id]["sub_devices"] = subs
+
+    return gateways
+
+
+def apply_scan_ips(topology: dict) -> dict:
+    """Run deviceScan() and fill in gateway IPs."""
+    try:
+        scan = tinytuya.deviceScan(verbose=False, maxretry=2, color=False)
+    except Exception as err:
+        _LOGGER.debug("deviceScan failed: %s", err)
+        return topology
+
+    for scan_id, info in scan.items():
+        # tinytuya deviceScan keyed by gwId (device ID) → {ip, ...}
+        if scan_id in topology:
+            topology[scan_id]["ip"] = info.get("ip")
+        else:
+            # Some versions key by IP; check gwId field
+            gw_id = info.get("gwId") or info.get("id", "")
+            if gw_id in topology:
+                topology[gw_id]["ip"] = info.get("ip")
+
+    found = sum(1 for g in topology.values() if g.get("ip"))
+    _LOGGER.debug("deviceScan: found IPs for %d/%d gateways", found, len(topology))
+    return topology
+
+
+# ---------------------------------------------------------------------------
 # Schedule binary decoding (unchanged logic from original)
 # ---------------------------------------------------------------------------
 
@@ -273,69 +333,13 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
     # Topology: build from getdevices() + deviceScan()
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _build_topology_from_devices(devices: list) -> dict:
-        """Map gateway IDs → sub-device lists (no IPs yet)."""
-        gateways: dict[str, dict] = {}
-        subs_by_gw: dict[str, list] = {}
-
-        for dev in devices:
-            gw_id = dev.get("gateway_id", "")
-            cat = dev.get("category", "")
-            dev_id = dev.get("id", "")
-            if not dev_id:
-                continue
-            if not gw_id and cat in GATEWAY_CATEGORIES:
-                gateways[dev_id] = {
-                    "id": dev_id,
-                    "key": dev.get("key", ""),
-                    "ip": None,
-                    "sub_devices": [],
-                }
-            elif gw_id and cat in WATERING_CATEGORIES:
-                subs_by_gw.setdefault(gw_id, []).append({
-                    "id": dev_id,
-                    "node_id": dev.get("node_id", ""),
-                    "category": cat,
-                    "name": dev.get("name", dev_id),
-                })
-
-        for gw_id, subs in subs_by_gw.items():
-            if gw_id in gateways:
-                gateways[gw_id]["sub_devices"] = subs
-
-        return gateways
-
-    @staticmethod
-    def _apply_scan_ips(topology: dict) -> dict:
-        """Run deviceScan() and fill in gateway IPs."""
-        try:
-            scan = tinytuya.deviceScan(verbose=False, maxretry=2, color=False)
-        except Exception as err:
-            _LOGGER.debug("deviceScan failed: %s", err)
-            return topology
-
-        for scan_id, info in scan.items():
-            # tinytuya deviceScan keyed by gwId (device ID) → {ip, ...}
-            if scan_id in topology:
-                topology[scan_id]["ip"] = info.get("ip")
-            else:
-                # Some versions key by IP; check gwId field
-                gw_id = info.get("gwId") or info.get("id", "")
-                if gw_id in topology:
-                    topology[gw_id]["ip"] = info.get("ip")
-
-        found = sum(1 for g in topology.values() if g.get("ip"))
-        _LOGGER.debug("deviceScan: found IPs for %d/%d gateways", found, len(topology))
-        return topology
-
     def _discover_topology(self) -> dict:
         cloud = self._get_cloud()
         devices = cloud.getdevices()
         if not isinstance(devices, list):
             return {}
-        topology = self._build_topology_from_devices(devices)
-        topology = self._apply_scan_ips(topology)
+        topology = build_topology_from_devices(devices)
+        topology = apply_scan_ips(topology)
         return topology
 
     # ------------------------------------------------------------------
