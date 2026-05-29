@@ -88,7 +88,7 @@ def build_topology_from_devices(devices: list) -> dict:
 def apply_scan_ips(topology: dict) -> dict:
     """Run deviceScan() and fill in gateway IPs."""
     try:
-        scan = tinytuya.deviceScan(verbose=False, maxretry=2, color=False)
+        scan = tinytuya.deviceScan(verbose=False, maxretry=8, color=False)
     except Exception as err:
         _LOGGER.debug("deviceScan failed: %s", err)
         return topology
@@ -283,8 +283,9 @@ def _schedule_summary(entry: dict | None) -> str | None:
 class TuyaGardenCoordinator(DataUpdateCoordinator):
     """Hybrid local-LAN + cloud coordinator for garden watering timers."""
 
-    def __init__(self, hass: HomeAssistant, config: dict) -> None:
+    def __init__(self, hass: HomeAssistant, config: dict, entry=None) -> None:
         self._config = config
+        self._entry = entry  # ConfigEntry — used to persist discovered IPs
         self._cloud: tinytuya.Cloud | None = None
 
         self._local_scan_interval = int(
@@ -700,6 +701,7 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
                         "[update] Re-scanning gateway IPs (no_ips=%s, fail_count=%d)",
                         no_ips, self._local_fail_count,
                     )
+                    prev_found = sum(1 for g in self._topology.values() if g.get("ip"))
                     await self.hass.async_add_executor_job(apply_scan_ips, self._topology)
                     found = sum(1 for g in self._topology.values() if g.get("ip"))
                     _LOGGER.debug(
@@ -707,6 +709,13 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
                         found, len(self._topology),
                     )
                     self._last_ip_scan = now
+                    # Persist newly discovered IPs back to the config entry
+                    if self._entry is not None and found > prev_found:
+                        from .const import CONF_TOPOLOGY
+                        updated = dict(self._entry.data)
+                        updated[CONF_TOPOLOGY] = self._topology
+                        self.hass.config_entries.async_update_entry(self._entry, data=updated)
+                        _LOGGER.debug("[update] Persisted %d gateway IPs to config entry", found)
                 except Exception as err:
                     _LOGGER.debug("[update] IP re-scan failed: %s", err)
 

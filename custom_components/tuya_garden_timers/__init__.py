@@ -15,7 +15,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Merge options (polling intervals) over base config data
     config = dict(entry.data)
     config.update(entry.options)
-    coordinator = TuyaGardenCoordinator(hass, config)
+    coordinator = TuyaGardenCoordinator(hass, config, entry=entry)
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})
