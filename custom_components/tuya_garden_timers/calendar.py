@@ -38,9 +38,14 @@ def _events_for_entry(
     zone_name: str,
     range_start: datetime,
     range_end: datetime,
+    enabled_only: bool = False,
 ) -> list[CalendarEvent]:
     """Expand a single schedule entry into CalendarEvents within [range_start, range_end)."""
-    if not entry or not entry.get("enabled"):
+    if not entry:
+        return []
+
+    enabled: bool = bool(entry.get("enabled"))
+    if enabled_only and not enabled:
         return []
 
     start_mins: int = entry.get("start_minutes", 0)
@@ -49,8 +54,12 @@ def _events_for_entry(
         return []
 
     mode: str = entry.get("mode", "weekly")
-    summary = f"{device_name} — {zone_name}"
-    description = f"{duration_mins} min · {_mode_label(entry)}"
+    if enabled:
+        summary = f"{device_name} — {zone_name}"
+        description = f"{duration_mins} min · {_mode_label(entry)}"
+    else:
+        summary = f"⏸ {device_name} — {zone_name}"
+        description = f"Schedule disabled · {duration_mins} min · {_mode_label(entry)}"
 
     # Iterate days in [range_start.date(), range_end.date()]
     day_start = range_start.date()
@@ -148,10 +157,10 @@ class WateringCalendar(TuyaGardenEntity, CalendarEntity):
 
     @property
     def event(self) -> CalendarEvent | None:
-        """Return the next upcoming watering event."""
+        """Return the next upcoming *enabled* watering event."""
         now = dt_util.now()
         horizon = now + timedelta(days=_MAX_LOOKAHEAD_DAYS)
-        upcoming = self._collect_events(now, horizon)
+        upcoming = self._collect_events(now, horizon, enabled_only=True)
         if not upcoming:
             return None
         return min(upcoming, key=lambda e: e.start)
@@ -162,15 +171,15 @@ class WateringCalendar(TuyaGardenEntity, CalendarEntity):
         start_date: datetime,
         end_date: datetime,
     ) -> list[CalendarEvent]:
-        """Return events in the requested range, capped to max lookahead."""
+        """Return all events (including disabled) in the requested range."""
         cap = dt_util.now() + timedelta(days=_MAX_LOOKAHEAD_DAYS)
         effective_end = min(end_date, cap)
         if effective_end <= start_date:
             return []
-        return self._collect_events(start_date, effective_end)
+        return self._collect_events(start_date, effective_end, enabled_only=False)
 
     def _collect_events(
-        self, range_start: datetime, range_end: datetime
+        self, range_start: datetime, range_end: datetime, enabled_only: bool = False
     ) -> list[CalendarEvent]:
         events: list[CalendarEvent] = []
         data: dict = self.coordinator.data or {}
@@ -183,7 +192,7 @@ class WateringCalendar(TuyaGardenEntity, CalendarEntity):
                     continue
                 zone_name: str = zone.get("name") or f"Zone {zone.get('zone_num', '?')}"
                 events.extend(
-                    _events_for_entry(entry, dev_name, zone_name, range_start, range_end)
+                    _events_for_entry(entry, dev_name, zone_name, range_start, range_end, enabled_only)
                 )
 
         return sorted(events, key=lambda e: e.start)
