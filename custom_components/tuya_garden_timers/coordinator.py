@@ -313,6 +313,10 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
         # Whether local reads are working (avoids log spam)
         self._local_ok: bool = bool(self._topology)
 
+        # IP re-scan tracking: re-scan when no IPs on startup, or after repeated failures
+        self._last_ip_scan: datetime | None = None
+        self._local_fail_count: int = 0
+
         super().__init__(
             hass,
             _LOGGER,
@@ -683,6 +687,29 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
             except Exception as err:
                 _LOGGER.warning("Topology discovery failed: %s", err)
 
+        # --- IP re-scan: on startup (topology has no IPs) or after repeated local failures ---
+        if self._topology:
+            no_ips = not any(g.get("ip") for g in self._topology.values())
+            ip_scan_stale = (
+                self._last_ip_scan is None
+                or (now - self._last_ip_scan).total_seconds() >= 600
+            )
+            if no_ips or (self._local_fail_count >= 3 and ip_scan_stale):
+                try:
+                    _LOGGER.debug(
+                        "[update] Re-scanning gateway IPs (no_ips=%s, fail_count=%d)",
+                        no_ips, self._local_fail_count,
+                    )
+                    await self.hass.async_add_executor_job(apply_scan_ips, self._topology)
+                    found = sum(1 for g in self._topology.values() if g.get("ip"))
+                    _LOGGER.debug(
+                        "[update] IP re-scan complete: %d/%d gateways have IPs",
+                        found, len(self._topology),
+                    )
+                    self._last_ip_scan = now
+                except Exception as err:
+                    _LOGGER.debug("[update] IP re-scan failed: %s", err)
+
         # --- Tier 1: Local LAN ---
         if self._topology:
             try:
@@ -694,10 +721,16 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
                     for device_id in local:
                         self._local_dps_ts[device_id] = now
                     self._local_ok = True
+                    self._local_fail_count = 0
                     _LOGGER.debug("[update] Local poll OK — %d devices updated", len(local))
                 else:
-                    _LOGGER.debug("[update] Local poll returned no devices this cycle")
+                    self._local_fail_count += 1
+                    _LOGGER.debug(
+                        "[update] Local poll returned no devices this cycle (fail_count=%d)",
+                        self._local_fail_count,
+                    )
             except Exception as err:
+                self._local_fail_count += 1
                 _LOGGER.debug("[update] Local poll exception: %s", err)
         else:
             _LOGGER.debug("[update] No topology — skipping local poll")
