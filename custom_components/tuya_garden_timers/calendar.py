@@ -1,21 +1,32 @@
-"""Calendar platform — one shared watering schedule calendar for all zones."""
+"""Calendar platform — one entity per zone so each gets its own colour in the
+week-view card.
+
+The HA Calendar card (Settings → Dashboards → Calendar, or a Lovelace Calendar
+card) automatically assigns a distinct colour to each calendar entity.  Add all
+7 zone calendars to the card and they will render as coloured time-blocks at the
+correct position on the week grid.
+
+Disabled schedules are included on the same entity (same colour family) but
+prefixed with ⏸ so they are visually distinct without being a different colour.
+"""
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+import logging
+from datetime import date, datetime, timedelta
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 import homeassistant.util.dt as dt_util
 
 from .const import DOMAIN
 from .coordinator import TuyaGardenCoordinator
-from .entity import TuyaGardenEntity
+from .entity import TuyaGardenZoneEntity
 
-# How many days ahead to generate events (calendar card requests from its own
-# date range, but we cap generation to avoid runaway loops on very wide ranges)
+_LOGGER = logging.getLogger(__name__)
+
+# How many days ahead to generate events
 _MAX_LOOKAHEAD_DAYS = 14
 
 
@@ -25,7 +36,80 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: TuyaGardenCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([WateringCalendar(coordinator)])
+    entities: list[CalendarEntity] = []
+
+    for device_id, dev_data in coordinator.data.items():
+        for zone in dev_data.get("zones", []):
+            entities.append(
+                WateringZoneCalendar(coordinator, device_id, zone["zone_num"])
+            )
+
+    async_add_entities(entities)
+
+
+# ---------------------------------------------------------------------------
+# Per-zone calendar entity
+# ---------------------------------------------------------------------------
+
+class WateringZoneCalendar(TuyaGardenZoneEntity, CalendarEntity):
+    """Calendar showing the watering schedule for one zone.
+
+    One entity per zone means each zone gets its own colour in the HA Calendar
+    card week view.  Enabled events show the plain zone name; disabled events
+    are prefixed with ⏸ so they read as 'this colour but inactive'.
+    """
+
+    def __init__(
+        self,
+        coordinator: TuyaGardenCoordinator,
+        device_id: str,
+        zone_num: int,
+    ) -> None:
+        super().__init__(coordinator, device_id, zone_num)
+        self._attr_unique_id = f"{device_id}_zone{zone_num}_calendar"
+
+    @property
+    def name(self) -> str:
+        dev_name = self._dev_data.get("name", self._device_id)
+        return f"{dev_name} — {self._zone_name}"
+
+    @property
+    def event(self) -> CalendarEvent | None:
+        """Return the next upcoming *enabled* event for this zone."""
+        now = dt_util.now()
+        horizon = now + timedelta(days=_MAX_LOOKAHEAD_DAYS)
+        upcoming = self._get_events(now, horizon, enabled_only=True)
+        return min(upcoming, key=lambda e: e.start) if upcoming else None
+
+    async def async_get_events(
+        self,
+        hass: HomeAssistant,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> list[CalendarEvent]:
+        """Return all events (enabled + disabled) in the requested range."""
+        cap = dt_util.now() + timedelta(days=_MAX_LOOKAHEAD_DAYS)
+        effective_end = min(end_date, cap)
+        if effective_end <= start_date:
+            return []
+        return self._get_events(start_date, effective_end, enabled_only=False)
+
+    def _get_events(
+        self,
+        range_start: datetime,
+        range_end: datetime,
+        enabled_only: bool = False,
+    ) -> list[CalendarEvent]:
+        entry = self._zone_data.get("schedule_entry")
+        if not entry:
+            return []
+        return _events_for_entry(
+            entry,
+            self._zone_name,
+            range_start,
+            range_end,
+            enabled_only=enabled_only,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -34,13 +118,12 @@ async def async_setup_entry(
 
 def _events_for_entry(
     entry: dict,
-    device_name: str,
     zone_name: str,
     range_start: datetime,
     range_end: datetime,
     enabled_only: bool = False,
 ) -> list[CalendarEvent]:
-    """Expand a single schedule entry into CalendarEvents within [range_start, range_end)."""
+    """Expand a schedule entry into CalendarEvents within [range_start, range_end)."""
     if not entry:
         return []
 
@@ -54,14 +137,14 @@ def _events_for_entry(
         return []
 
     mode: str = entry.get("mode", "weekly")
+
     if enabled:
-        summary = f"{device_name} — {zone_name}"
+        summary = zone_name
         description = f"{duration_mins} min · {_mode_label(entry)}"
     else:
-        summary = f"⏸ {device_name} — {zone_name}"
+        summary = f"⏸ {zone_name}"
         description = f"Schedule disabled · {duration_mins} min · {_mode_label(entry)}"
 
-    # Iterate days in [range_start.date(), range_end.date()]
     day_start = range_start.date()
     day_end = (range_end - timedelta(seconds=1)).date()
     events: list[CalendarEvent] = []
@@ -71,7 +154,6 @@ def _events_for_entry(
         if _day_matches(entry, mode, current):
             ev_start = _local_midnight(current) + timedelta(minutes=start_mins)
             ev_end = ev_start + timedelta(minutes=duration_mins)
-            # Only include if the event overlaps the requested range
             if ev_end > range_start and ev_start < range_end:
                 events.append(
                     CalendarEvent(
@@ -87,13 +169,11 @@ def _events_for_entry(
 
 
 def _day_matches(entry: dict, mode: str, day: date) -> bool:
-    """Return True if this schedule entry fires on the given date."""
     if mode == "weekly":
         mask: int = entry.get("days_bitmask", 0)
         if not mask:
             return False
-        # Tuya bitmask: bit6=Sun, bit5=Mon, …, bit0=Sat
-        # Python weekday(): 0=Mon … 6=Sun
+        # Tuya bitmask: bit6=Sun … bit0=Sat; Python weekday: 0=Mon … 6=Sun
         py_to_bit = {0: 5, 1: 4, 2: 3, 3: 2, 4: 1, 5: 0, 6: 6}
         return bool(mask & (1 << py_to_bit[day.weekday()]))
 
@@ -115,7 +195,6 @@ def _day_matches(entry: dict, mode: str, day: date) -> bool:
 
 
 def _local_midnight(day: date) -> datetime:
-    """Return a timezone-aware datetime at midnight local time for the given date."""
     local_tz = dt_util.DEFAULT_TIME_ZONE
     return datetime(day.year, day.month, day.day, 0, 0, 0, tzinfo=local_tz)
 
@@ -132,67 +211,3 @@ def _mode_label(entry: dict) -> str:
     elif mode == "calendar":
         return f"{entry.get('calendar_type', '')} days of month"
     return ""
-
-
-# ---------------------------------------------------------------------------
-# Calendar entity
-# ---------------------------------------------------------------------------
-
-class WateringCalendar(TuyaGardenEntity, CalendarEntity):
-    """A single shared calendar showing all zone watering schedules."""
-
-    _attr_name = "Watering Schedule"
-
-    def __init__(self, coordinator: TuyaGardenCoordinator) -> None:
-        super().__init__(coordinator, "__hub__")
-        self._attr_unique_id = f"{DOMAIN}_watering_calendar"
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers={(DOMAIN, "__hub__")},
-            name="Tuya Garden Timers Hub",
-            manufacturer="Tuya",
-        )
-
-    @property
-    def event(self) -> CalendarEvent | None:
-        """Return the next upcoming *enabled* watering event."""
-        now = dt_util.now()
-        horizon = now + timedelta(days=_MAX_LOOKAHEAD_DAYS)
-        upcoming = self._collect_events(now, horizon, enabled_only=True)
-        if not upcoming:
-            return None
-        return min(upcoming, key=lambda e: e.start)
-
-    async def async_get_events(
-        self,
-        hass: HomeAssistant,
-        start_date: datetime,
-        end_date: datetime,
-    ) -> list[CalendarEvent]:
-        """Return all events (including disabled) in the requested range."""
-        cap = dt_util.now() + timedelta(days=_MAX_LOOKAHEAD_DAYS)
-        effective_end = min(end_date, cap)
-        if effective_end <= start_date:
-            return []
-        return self._collect_events(start_date, effective_end, enabled_only=False)
-
-    def _collect_events(
-        self, range_start: datetime, range_end: datetime, enabled_only: bool = False
-    ) -> list[CalendarEvent]:
-        events: list[CalendarEvent] = []
-        data: dict = self.coordinator.data or {}
-
-        for dev_data in data.values():
-            dev_name: str = dev_data.get("name", "Timer")
-            for zone in dev_data.get("zones", []):
-                entry = zone.get("schedule_entry")
-                if not entry:
-                    continue
-                zone_name: str = zone.get("name") or f"Zone {zone.get('zone_num', '?')}"
-                events.extend(
-                    _events_for_entry(entry, dev_name, zone_name, range_start, range_end, enabled_only)
-                )
-
-        return sorted(events, key=lambda e: e.start)
