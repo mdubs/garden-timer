@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -19,7 +20,9 @@ _CARD_PATH = Path(__file__).parent / "www" / "garden-timer-card.js"
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register the custom Lovelace card JS (once per HA instance)
     if not hass.data.get(f"{DOMAIN}_card_registered"):
-        hass.http.register_static_path(_CARD_URL, str(_CARD_PATH), cache_headers=False)
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(_CARD_URL, str(_CARD_PATH), cache_headers=False)]
+        )
         hass.data[f"{DOMAIN}_card_registered"] = True
 
     # Merge options (polling intervals) over base config data
