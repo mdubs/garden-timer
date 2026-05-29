@@ -77,6 +77,8 @@ class LastWateredDurationSensor(TuyaGardenZoneEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.DURATION
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _attr_suggested_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_suggested_display_precision = 1
 
     def __init__(
         self,
