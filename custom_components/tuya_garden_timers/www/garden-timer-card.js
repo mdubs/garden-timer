@@ -117,14 +117,22 @@ class GardenTimerCard extends HTMLElement {
     const settled = await Promise.allSettled(
       this._entityIds.map(id =>
         this._hass
-          .callWS({ type: 'calendar/event/list', entity_id: id, start: start.toISOString(), end: end.toISOString() })
+          .callWS({ type: 'calendar/events', entity_id: id, start: start.toISOString(), end: end.toISOString() })
           .then(r => ({ id, evts: r || [] }))
       )
     );
     this._events = {};
+    this._wsErrors = [];
     settled.forEach(r => {
-      if (r.status === 'fulfilled') this._events[r.value.id] = r.value.evts;
+      if (r.status === 'fulfilled') {
+        this._events[r.value.id] = r.value.evts;
+      } else {
+        this._wsErrors.push(r.reason?.message || String(r.reason));
+      }
     });
+    if (this._wsErrors.length && !Object.values(this._events).some(e => e.length)) {
+      console.error('garden-timer-card WS errors:', this._wsErrors);
+    }
     this._loading = false;
     this._render();
   }
@@ -302,6 +310,7 @@ class GardenTimerCard extends HTMLElement {
             <span class="title">🌿 ${this._config.title} &nbsp;·&nbsp; ${weekLabel}</span>
             <button class="nav" id="next">&#8250;</button>
           </div>
+          ${this._wsErrors && this._wsErrors.length ? `<div style="color:red;font-size:11px;margin-bottom:6px">⚠ WS error: ${this._wsErrors[0]}</div>` : ''}
           <div class="legend">${legendHtml}</div>
           <div class="grid">
             <div class="time-axis">
