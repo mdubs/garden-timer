@@ -125,7 +125,6 @@ class GardenTimerCard extends HTMLElement {
     settled.forEach(r => {
       if (r.status === 'fulfilled') this._events[r.value.id] = r.value.evts;
     });
-
     this._loading = false;
     this._render();
   }
@@ -164,8 +163,9 @@ class GardenTimerCard extends HTMLElement {
     this._entityIds.forEach(id => {
       const color = this._colors[id];
       (this._events[id] || []).forEach(evt => {
-        const evStart = new Date(evt.start);
-        const evEnd   = new Date(evt.end);
+      // HA WS calendar API wraps times as {dateTime:"..."} or {date:"YYYY-MM-DD"}
+      const evStart = new Date(evt.start.dateTime || evt.start.date);
+      const evEnd   = new Date(evt.end.dateTime   || evt.end.date);
         const di = weekDates.findIndex(d => d.toDateString() === evStart.toDateString());
         if (di === -1) return;
         const startMins = evStart.getHours() * 60 + evStart.getMinutes();
@@ -257,8 +257,11 @@ class GardenTimerCard extends HTMLElement {
 
     // ---- Legend ----------------------------------------------------------
     const legendHtml = this._entityIds.map(id => {
-      const name  = (this._hass.states[id]?.attributes?.friendly_name || id)
-        .replace(' \u2014 ', ' · ');  // "Device — Zone" → "Device · Zone"
+      // friendly_name is "Device — Zone"; shorten to just "Zone" part in legend
+      // since colours already group by zone. Fall back to full name if no separator.
+      const full  = this._hass.states[id]?.attributes?.friendly_name || id;
+      const parts = full.split(' \u2014 ');
+      const name  = parts.length >= 2 ? parts.slice(1).join(' \u2014 ') : full;
       const color = this._colors[id];
       return `
         <div style="display:inline-flex;align-items:center;gap:5px;

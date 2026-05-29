@@ -59,6 +59,10 @@ class WateringZoneCalendar(TuyaGardenZoneEntity, CalendarEntity):
     are prefixed with ⏸ so they read as 'this colour but inactive'.
     """
 
+    # Manage the full name ourselves ("Device — Zone"); don't let HA prepend
+    # the device name a second time.
+    _attr_has_entity_name = False
+
     def __init__(
         self,
         coordinator: TuyaGardenCoordinator,
