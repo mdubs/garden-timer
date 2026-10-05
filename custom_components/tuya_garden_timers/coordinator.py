@@ -558,7 +558,11 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
                 {**z1, "switch_dp": z0["switch_dp"], "switch_code": z0["switch_code"], "state_dp": z0["state_dp"]},
             ]
         zone_names = slow.get("zone_names", {})
-        schedule_b64 = slow.get("schedule_b64")
+        # Prefer the schedule from the cloud-fast shadow (every few minutes) so
+        # changes made in the Tuya app show up without waiting for the daily
+        # slow refresh; fall back to the slow-tier copy.
+        sched_code = "normal_timer" if category == "ggq" else "timer"
+        schedule_b64 = fast_props.get(sched_code, {}).get("value") or slow.get("schedule_b64")
         entries = _decode_timer_payload(schedule_b64, category) if schedule_b64 else []
 
         zones = []
