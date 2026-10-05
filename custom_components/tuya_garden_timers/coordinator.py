@@ -457,8 +457,17 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
         # cached data, so first setup becomes ConfigEntryNotReady and HA retries
         # (e.g. DNS/network not up yet at boot) instead of loading with 0 entities.
         devices = cloud.getdevices()
-        if not isinstance(devices, list):
-            raise RuntimeError(f"Unexpected getdevices response: {devices!r}")
+        if not isinstance(devices, list) or not devices:
+            # tinytuya hides Tuya's error code/message; query the endpoint
+            # directly so the log says why (e.g. 28841002 subscription expired).
+            raw = cloud.cloudrequest("/v1.0/iot-01/associated-users/devices?size=50")
+            if isinstance(raw, dict) and raw.get("success") is False:
+                raise RuntimeError(
+                    f"Tuya cloud error {raw.get('code')}: {raw.get('msg')}"
+                    " (check the IoT Core subscription and credentials at iot.tuya.com)"
+                )
+            if not isinstance(devices, list):
+                raise RuntimeError(f"Unexpected getdevices response: {devices!r}")
 
         data: dict[str, dict] = {}
         watering = [d for d in devices if d.get("category") in WATERING_CATEGORIES]
