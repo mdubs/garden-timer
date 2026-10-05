@@ -25,6 +25,7 @@ from typing import Any
 import tinytuya
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+import homeassistant.util.dt as dt_util
 
 from .const import (
     BATTERY_DP,
@@ -316,6 +317,8 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
 
         self._last_cloud_fast: datetime | None = None
         self._last_cloud_slow: datetime | None = None
+        # UTC time of the last successful schedule fetch (exposed to the card)
+        self.schedule_updated_at: datetime | None = None
 
         # Local data older than this many seconds is treated as stale in _merge
         self._local_stale_secs: int = self._local_scan_interval * 3
@@ -789,6 +792,7 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
                 if slow:
                     self._cloud_slow = slow
                     self._last_cloud_slow = now
+                    self.schedule_updated_at = dt_util.utcnow()
                     _LOGGER.debug("Cloud slow refresh: %d devices", len(slow))
                 elif not self._cloud_slow:
                     raise UpdateFailed("Cloud returned no watering devices")
@@ -812,6 +816,8 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
                 )
                 self._cloud_fast.update(fast)
                 self._last_cloud_fast = now
+                if fast:
+                    self.schedule_updated_at = dt_util.utcnow()
                 _LOGGER.debug("Cloud fast refresh: %d devices", len(fast))
             except Exception as err:
                 _LOGGER.debug("Cloud fast refresh failed: %s", err)

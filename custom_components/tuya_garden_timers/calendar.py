@@ -78,6 +78,16 @@ class WateringZoneCalendar(TuyaGardenZoneEntity, CalendarEntity):
         return f"{dev_name} — {self._zone_name}"
 
     @property
+    def extra_state_attributes(self) -> dict:
+        """Grouping + freshness info for the garden-timer-card."""
+        updated = self.coordinator.schedule_updated_at
+        return {
+            "device_name": self._dev_data.get("name", self._device_id),
+            "zone_name": self._zone_name,
+            "schedule_updated": updated.isoformat() if updated else None,
+        }
+
+    @property
     def event(self) -> CalendarEvent | None:
         """Return the next upcoming *enabled* event for this zone."""
         now = dt_util.now()
