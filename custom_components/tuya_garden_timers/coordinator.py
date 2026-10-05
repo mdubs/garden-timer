@@ -453,11 +453,12 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
         cloud = self._get_cloud()
 
         # getdevices() must be called first to init auth state
-        try:
-            devices = cloud.getdevices()
-        except Exception as err:
-            _LOGGER.warning("Cloud slow getdevices failed: %s", err)
-            return {}
+        # Let errors propagate: the caller raises UpdateFailed when there is no
+        # cached data, so first setup becomes ConfigEntryNotReady and HA retries
+        # (e.g. DNS/network not up yet at boot) instead of loading with 0 entities.
+        devices = cloud.getdevices()
+        if not isinstance(devices, list):
+            raise RuntimeError(f"Unexpected getdevices response: {devices!r}")
 
         data: dict[str, dict] = {}
         watering = [d for d in devices if d.get("category") in WATERING_CATEGORIES]
@@ -776,6 +777,10 @@ class TuyaGardenCoordinator(DataUpdateCoordinator):
                     self._cloud_slow = slow
                     self._last_cloud_slow = now
                     _LOGGER.debug("Cloud slow refresh: %d devices", len(slow))
+                elif not self._cloud_slow:
+                    raise UpdateFailed("Cloud returned no watering devices")
+            except UpdateFailed:
+                raise
             except Exception as err:
                 _LOGGER.warning("Cloud slow refresh failed: %s", err)
                 if not self._cloud_slow:
