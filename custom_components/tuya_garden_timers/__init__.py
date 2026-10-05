@@ -7,6 +7,8 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN
 from .coordinator import TuyaGardenCoordinator
@@ -17,14 +19,20 @@ _CARD_URL  = f"/{DOMAIN}/garden-timer-card-v5.js"
 _CARD_PATH = Path(__file__).parent / "www" / "garden-timer-card-v5.js"
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    # Register the custom Lovelace card JS (once per HA instance)
-    if not hass.data.get(f"{DOMAIN}_card_registered"):
-        await hass.http.async_register_static_paths(
-            [StaticPathConfig(_CARD_URL, str(_CARD_PATH), cache_headers=False)]
-        )
-        hass.data[f"{DOMAIN}_card_registered"] = True
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    # Register the custom Lovelace card JS here rather than in
+    # async_setup_entry: entry setup waits for the first (slow) Tuya fetch, and
+    # dashboards loaded before then would get a 404 and a "Configuration error".
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(_CARD_URL, str(_CARD_PATH), cache_headers=False)]
+    )
+    return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Merge options (polling intervals) over base config data
     config = dict(entry.data)
     config.update(entry.options)

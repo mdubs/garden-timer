@@ -3,6 +3,7 @@
   "name": "Tuya Garden Timers",
   "codeowners": ["@mdubs"],
   "config_flow": true,
+  "dependencies": ["http"],
   "documentation": "https://github.com/mdubs/garden-timer",
   "issue_tracker": "https://github.com/mdubs/garden-timer/issues",
   "integration_type": "hub",
