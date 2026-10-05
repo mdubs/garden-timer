@@ -340,11 +340,14 @@ class GardenTimerCard extends HTMLElement {
       const ring   = clash ? `box-shadow:0 0 0 2px ${CLASH_COLOR};z-index:2;` : '';
       const text   = ev.disabled ? ev.color : '#fff';
       const width  = 100 / ev.lanes;
-      // Show time label only when block is tall enough
-      const label  = height > 4
-        ? `${clash ? '⚠ ' : ''}${ev.disabled ? '⏸ ' : ''}${_fmtTime(ev.rawStart)}`
-        : '';
-      const sublabel = height > 8 ? `<div style="font-size:9px;opacity:.8">${dur}m</div>` : '';
+      // Fit as much text as the block's pixel height allows:
+      // time (+ duration) first, then the zone name.
+      const px = height / 100 * GRID_H;
+      const flags = `${clash ? '⚠ ' : ''}${ev.disabled ? '⏸ ' : ''}`;
+      const lines = [];
+      if (px >= 12) lines.push(`${flags}${_fmtTime(ev.rawStart)}${px >= 24 ? ` · ${dur}m` : ''}`);
+      if (px >= 24) lines.push(`<span style="font-weight:500">${_esc(_blockName(ev.names))}</span>`);
+      const label = lines.map(l => `<div style="overflow:hidden;text-overflow:ellipsis">${l}</div>`).join('');
       const tooltip = [
         `${ev.disabled ? '⏸ ' : ''}${ev.names.device}${SEP}${ev.names.zone}`,
         `${_fmtTime(ev.rawStart)}–${_fmtTime(ev.rawEnd)} · ${ev.description}`,
@@ -367,7 +370,7 @@ class GardenTimerCard extends HTMLElement {
           <div style="padding:2px 3px;font-size:10px;font-weight:600;
                       color:${text};white-space:nowrap;overflow:hidden;
                       text-overflow:ellipsis;line-height:1.3">
-            ${label}${sublabel}
+            ${label}
           </div>
         </div>`;
     };
@@ -511,6 +514,11 @@ function _fmtTime(totalMins) {
   const h = Math.floor(totalMins / 60) % 24;
   const m = totalMins % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** Name shown inside a block: the zone, prefixed by device if it's generic ("Zone 1"). */
+function _blockName({ device, zone }) {
+  return device && /^zone\s*\d+$/i.test(zone.trim()) ? `${device} ${zone}` : zone;
 }
 
 function _clock(d) {
